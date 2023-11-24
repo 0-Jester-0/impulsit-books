@@ -1,0 +1,14 @@
+{
+  "name": "jester/custom",
+  "description": "jester.custom module",
+  "require": {
+    "monolog/monolog": "3.5.0"
+  },
+  "extra": {
+    "merge-plugin": {
+      "require": [
+        "../../../bitrix/composer-bx.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+.idea
+
+bitrix
+upload
+
+local/modules/jester.custom/vendor
+
+/local/modules/jester.custom/composer.lock
+
+test*.*
+
+*.log
