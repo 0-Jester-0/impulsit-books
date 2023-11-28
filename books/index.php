@@ -1,4 +1,12 @@
-<?
-require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
+<?php require($_SERVER["DOCUMENT_ROOT"]."/bitrix/header.php");
 $APPLICATION->SetTitle("Книги");
-?>Text here....<?require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>
+?>
+
+<?php $APPLICATION->IncludeComponent(
+	"jester.custom:book.list",
+	".default",
+	[]
+);?>
+
+
+<?php require($_SERVER["DOCUMENT_ROOT"]."/bitrix/footer.php");?>
