@@ -11,7 +11,6 @@ use Bitrix\Main\Entity\UpdateResult;
 use Bitrix\Main\Loader;
 use Bitrix\Main\LoaderException;
 use Bitrix\Main\ObjectPropertyException;
-use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\SystemException;
 
 class HlbWrap
