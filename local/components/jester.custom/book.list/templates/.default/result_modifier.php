@@ -10,6 +10,7 @@ if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED !== true) die();
 
 $pictureIDs = array_column($arResult["ITEMS"], "UF_PICTURE");
 
+//Получение ссылок на изображения книг по идентификаторам
 if (!empty($pictureIDs)) {
 	$picturesResult = CFile::getList([], ["@ID" => $pictureIDs]);
 
