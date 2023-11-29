@@ -1,15 +1,23 @@
 <?php if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED !== true) die();
 
-use Bitrix\Main\ArgumentException;
-use Bitrix\Main\Engine\Contract\Controllerable;
-use Bitrix\Main\Engine\CurrentUser;
-use Bitrix\Main\LoaderException;
-use Bitrix\Main\ObjectPropertyException;
-use Bitrix\Main\SystemException;
-use Bitrix\Main\UserField\Types\EnumType;
-use Bitrix\Main\UserFieldTable;
-use Jester\Custom\Highloadblock\HlbWrap;
-use Jester\Custom\Log\Logger;
+use Bitrix\Main\{
+	ArgumentException,
+	Engine\Contract\Controllerable,
+	Engine\CurrentUser,
+	ErrorCollection,
+	LoaderException,
+	ObjectPropertyException,
+	SystemException,
+	UserField\Types\EnumType,
+	UserFieldTable,
+	Error,
+	Engine\ActionFilter
+};
+
+use Jester\Custom\{
+	Highloadblock\HlbWrap,
+	Log\Logger
+};
 
 class BookList extends CBitrixComponent implements Controllerable
 {
@@ -18,11 +26,18 @@ class BookList extends CBitrixComponent implements Controllerable
 
 	protected Logger $logger;
 
+	protected ErrorCollection $errorCollection;
+
+	/**
+	 * @return array[][]
+	 */
 	public function configureActions(): array
 	{
 		return [
 			'rateBook' => [
-				'prefilters' => [],
+				'prefilters' => [
+					new ActionFilter\Authentication(),
+				],
 			],
 			'recalculateAverageBookRating' => [
 				'prefilters' => [],
@@ -30,9 +45,24 @@ class BookList extends CBitrixComponent implements Controllerable
 		];
 	}
 
+	/**
+	 * Проставление оценки на книгу (добавление записи о выставленной оценке в Hlb BookRatings)
+	 *
+	 * Оценка удаляется при условии, что нажатая пользователем кнопка была ранее выставленной им оценкой
+	 *
+	 * Удаление оценки можно вынести в отдельный метод и триггерить событием по нажатию уже активной кнопки
+	 * однако для экономии времени удаление оценки было включено в этот метод, тк тоже влияет на формирование итогового рейтинга
+	 *
+	 * @param int $bookId
+	 * @param int $mark
+	 * @return void
+	 * @throws SystemException
+	 */
 	public function rateBookAction(int $bookId, int $mark): void
 	{
-		if (!check_bitrix_sessid()) {
+		global $USER;
+
+		if (!$USER->IsAuthorized()) {
 			throw new SystemException("Session probably expired!");
 		}
 
@@ -42,7 +72,7 @@ class BookList extends CBitrixComponent implements Controllerable
 
 		try {
 			$userBookMark = $hlbBookRatings->getList([
-				"select" => ["ID"],
+				"select" => ["ID", "UF_MARK"],
 				"filter" => [
 					"UF_BOOK_ID" => $bookId,
 					"UF_USER_ID" => $userId
@@ -51,6 +81,9 @@ class BookList extends CBitrixComponent implements Controllerable
 
 			if ($userBookMark) {
 				$hlbBookRatings->delete($userBookMark["ID"]);
+				if ($userBookMark["UF_MARK"] == $mark) {
+					return;
+				}
 			}
 
 			$hlbBookRatings->add([
@@ -59,39 +92,50 @@ class BookList extends CBitrixComponent implements Controllerable
 				"UF_MARK" => $mark
 			]);
 		} catch (ObjectPropertyException|ArgumentException|LoaderException|SystemException $e) {
-			$this->logger->error($e->getMessage());
+			$this->errorCollection->setError(new Error($e->getMessage()));
 		}
 	}
 
-	public function recalculateAverageBookRatingAction(): void
+	/**
+	 * Пересчёт средней оценки книги после (обновление поля "Рейтинг" для выбранной книги в Hlb "Books")
+	 *
+	 * Вызывается после проставления/удаления очередной оценки для некоторой книги
+	 *
+	 * Была идея делать пересчёт рейтинга для всех книг, но мне показалось довольно неочевидным для пользователя, что
+	 * при проставлении оценки для одной книги рейтинг меняется у всех
+	 *
+	 * @param int $bookId
+	 * @return float
+	 */
+	public function recalculateAverageBookRatingAction(int $bookId): float
 	{
-		$books = $this->getBooks();
-		$booksIDs = array_column($books, "ID");
+		$bookAverageRating = 0;
 
 		try {
 			$hlbBookRatings = new HlbWrap(static::BOOKS_RATING_HLB_NAME);
-			$bookRatingsResult = $hlbBookRatings->getList([
+			$bookMarks = $hlbBookRatings->getList([
 				"select" => ["UF_BOOK_ID", "UF_MARK"],
 				"filter" => [
-					"@UF_BOOK_ID" => $booksIDs
+					"UF_BOOK_ID" => $bookId
 				]
 			])->fetchAll();
 
 			$booksMarks = [];
-			foreach ($bookRatingsResult as $bookMark) {
+			foreach ($bookMarks as $bookMark) {
 				$booksMarks[$bookMark["UF_BOOK_ID"]][] = $bookMark["UF_MARK"];
 			}
 
 			$hlbBooks = new HlbWrap(static::BOOKS_HLB_NAME);
-			foreach ($booksIDs as $bookID) {
-				$bookAverageRating = array_sum($booksMarks[$bookID]) / count($booksMarks[$bookID]);
-				$hlbBooks->update($bookID, ["UF_RATING" => $bookAverageRating]);
 
-				$this->arResult["ITEMS"][$bookID]["UF_RATING"] = $bookAverageRating;
+			if (!empty($booksMarks[$bookId])) {
+				$bookAverageRating = array_sum($booksMarks[$bookId]) / count($booksMarks[$bookId]);
+				$hlbBooks->update($bookId, ["UF_RATING" => $bookAverageRating]);
 			}
 		} catch (ObjectPropertyException|ArgumentException|LoaderException|SystemException $e) {
-			$this->logger->error($e->getMessage());
+			$this->errorCollection->setError(new Error($e->getMessage()));
 		}
+
+		return $bookAverageRating;
 	}
 
 	/**
@@ -118,6 +162,8 @@ class BookList extends CBitrixComponent implements Controllerable
 	}
 
 	/**
+	 * Метод получения информации о книгах
+	 *
 	 * @return array
 	 * @throws ArgumentException
 	 * @throws LoaderException
@@ -137,11 +183,13 @@ class BookList extends CBitrixComponent implements Controllerable
 			$books[$book["ID"]] = $book;
 		}
 
-
 		return $books;
 	}
 
 	/**
+	 * Метод получения диапазона оценок из пользовательского поля типа "Список" для формирования группы кнопок
+	 * в шаблоне компонента
+	 *
 	 * @return array
 	 * @throws ArgumentException
 	 * @throws LoaderException
@@ -152,7 +200,6 @@ class BookList extends CBitrixComponent implements Controllerable
 	{
 		$userFieldEnumItems = [];
 		$hlbBookRatings = new HlbWrap(static::BOOKS_RATING_HLB_NAME);
-
 
 		$hlbBookRatingsId = $hlbBookRatings->getHlbId();
 
@@ -177,6 +224,8 @@ class BookList extends CBitrixComponent implements Controllerable
 	}
 
 	/**
+	 * Метод получения оценок текущего авторизованного пользователя
+	 *
 	 * @return array
 	 * @throws ArgumentException
 	 * @throws LoaderException
@@ -185,7 +234,9 @@ class BookList extends CBitrixComponent implements Controllerable
 	 */
 	public function getUserMarks(): array
 	{
-		if (!check_bitrix_sessid()) {
+		global $USER;
+
+		if (!$USER->IsAuthorized()) {
 			throw new SystemException("Session probably expired!");
 		}
 
@@ -204,11 +255,37 @@ class BookList extends CBitrixComponent implements Controllerable
 	}
 
 	/**
+	 * @param $arParams
 	 * @return void
-	 * @throws SystemException
+	 */
+	public function onPrepareComponentParams($arParams): void
+	{
+		$this->errorCollection = new ErrorCollection();
+	}
+
+	/**
+	 * @return Error[]
+	 */
+	public function getErrors(): array
+	{
+		return $this->errorCollection->toArray();
+	}
+
+	/**
+	 * @param string $code
+	 * @return Error
+	 */
+	public function getErrorByCode(string $code): Error
+	{
+		return $this->errorCollection->getErrorByCode($code);
+	}
+
+	/**
+	 * @return void
 	 */
 	public function executeComponent(): void
 	{
+		CJSCore::Init(["ajax", "jquery"]);
 		$this->initLogger();
 		$this->fillArResult();
 		$this->includeComponentTemplate();
