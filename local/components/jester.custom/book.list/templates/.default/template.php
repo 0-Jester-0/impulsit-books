@@ -16,7 +16,7 @@ $asset->addCss('https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.
 $asset->addJs('https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js');
 ?>
 
-<div class="container text-lef">
+<div class="container text-left" id="bookList">
 	<?php foreach ($arResult["ITEMS"] as $bookId => $book): ?>
         <div class="row">
             <div class="col-12 p-0">
@@ -31,16 +31,21 @@ $asset->addJs('https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bu
                                 <p class="card-text">
                                     <small class="text-body-secondary"><?= $book["UF_AUTHOR"] ?></small>
                                 </p>
-                                <p class="card-text">Рейтинг: <?= $book["UF_RATING"] ?></p>
-                                <div class="btn-toolbar justify-content-between" role="toolbar"
-                                     aria-label="Rating panel">
-                                    <div class="btn-group" role="group" aria-label="Rating buttons group">
-										<?php foreach ($arResult["MARKS"] as $mark): ?>
-                                            <input type="button" class="btn btn-outline-secondary <?= $arResult["USER_MARKS"][$bookId] ? "active" : "" ?>"
-                                                   value="<?= $mark ?>"
-                                                   id="mark-<?= $mark ?>"/>
-										<?php endforeach; ?>
-                                    </div>
+                                <p class="card-text" id="book-<?= $bookId ?>-rating">
+                                    <?= Loc::getMessage("JESTER.CUSTOM_RATING_TITLE") ?>
+                                    <strong><?= $book["UF_RATING"] ?></strong>
+                                </p>
+                                <div class="btn-toolbar justify-content-between" role="toolbar" aria-label="Rating panel">
+                                    <form name="book-<?= $bookId ?>-rating-form">
+                                        <input type="text" name="book-id" value="<?= $bookId ?>" hidden="hidden">
+                                        <div class="btn-group" role="group" aria-label="Rating buttons group">
+											<?php foreach ($arResult["MARKS"] as $mark): ?>
+                                                <input type="button" class="btn btn-outline-success <?= $arResult["USER_MARKS"][$bookId] == $mark ? "active" : "" ?>"
+                                                       value="<?= $mark ?>"
+                                                       id="book-<?= $bookId ?>-mark-<?= $mark ?>"/>
+											<?php endforeach; ?>
+                                        </div>
+                                    </form>
                                 </div>
                             </div>
                         </div>
